@@ -1,0 +1,4 @@
+[core]
+    remote = mylocal
+['remote "mylocal"']
+    url = ../loacl_s3
