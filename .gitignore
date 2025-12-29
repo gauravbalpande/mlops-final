@@ -25,3 +25,4 @@ outputs/
 build/
 dist/
 *.egg-info/
+rawdata.csv
