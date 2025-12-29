@@ -7,10 +7,7 @@ env/
 venv/
 .venv/
 .ipynb_checkpoints/
-external/
-interim/
-processed/
-raw/
+
 models/
 mlruns/
 logs/
