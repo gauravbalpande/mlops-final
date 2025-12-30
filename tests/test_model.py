@@ -23,7 +23,7 @@ class TestCreditFraudModel(unittest.TestCase):
 
         # Set up MLflow tracking URI
         mlflow.set_tracking_uri(f'{dagshub_url}/{repo_owner}/{repo_name}.mlflow')
-        
+
         # Load the latest version of the fraud detection model from MLflow Model Registry
         cls.model_name = "my_model"
         cls.model_version = cls.get_latest_model_version(cls.model_name)
