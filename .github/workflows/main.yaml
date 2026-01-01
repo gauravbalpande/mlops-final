@@ -1,3 +1,103 @@
+# name: CI Pipeline
+
+# on: push
+
+# jobs:
+#   project-testing:
+#     runs-on: ubuntu-latest
+#     env:
+#       BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
+#       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#       FILE_KEY: ${{ secrets.FILE_KEY }}
+#     steps:
+#       - name: checkout code
+#         uses: actions/checkout@v3
+
+#       - name: setup python
+#         uses: actions/setup-python@v2
+#         with:
+#           python-version: '3.10'
+
+#       - name: Cache pip dependencies
+#         uses: actions/cache@v3
+#         with:
+#           path: ~/.cache/pip
+#           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+#           restore-keys: |
+#             ${{ runner.os }}-pip-
+
+#       - name: install dependencies
+#         run: |
+#           pip install -r requirements.txt
+
+#       - name: run pipeline
+#         env:
+#           CAPSTONE_TEST: ${{ secrets.CAPSTONE_TEST }}
+#         run: |
+#           dvc repro
+
+#       - name: Run model tests
+#         env:
+#           CAPSTONE_TEST: ${{ secrets.CAPSTONE_TEST }}
+#         run: |
+#           python -m unittest tests/test_model.py
+
+#       - name: Promote model to production
+#         if: success()
+#         env:
+#           CAPSTONE_TEST: ${{ secrets.CAPSTONE_TEST }}
+#         run: python scripts/promote_model.py
+
+#       - name: Run Flask app tests
+#         if: success()
+#         env:
+#           CAPSTONE_TEST: ${{ secrets.CAPSTONE_TEST }}
+#         run: python -m unittest tests/test_flask_app.py
+
+#       - name: Login to AWS ECR
+#         if: success()
+#         run: |
+#             aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+#             aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#             aws configure set region ${{ secrets.AWS_REGION }}
+#             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+#       - name: Build Docker image
+#         run: |
+#             docker build -t ${{ secrets.ECR_REPOSITORY }}:latest .
+
+#       - name: Tag Docker image
+#         run: |
+#             docker tag ${{ secrets.ECR_REPOSITORY }}:latest \
+#             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+
+    
+#       - name: Check Docker Authentication
+#         run: docker info
+
+#       - name: Push Docker image to ECR
+#         run: |
+#           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+
+#       - name: Set Up kubectl
+#         uses: azure/setup-kubectl@v3
+#         with:
+#           version: 'latest'
+      
+#       - name: Update kubeconfig
+#         run: |
+#           aws eks update-kubeconfig --region us-east-1 --name flask-app-cluster
+
+#       - name: Create Kubernetes Secret
+#         run: |
+#           kubectl create secret generic capstone-secret \
+#             --from-literal=CAPSTONE_TEST=${{ secrets.CAPSTONE_TEST }} --dry-run=client -o yaml | kubectl apply -f -
+
+#       - name: Deploy to EKS
+#         run: |
+#           kubectl apply -f deployment.yaml
+
 name: CI Pipeline
 
 on: push
@@ -5,94 +105,89 @@ on: push
 jobs:
   project-testing:
     runs-on: ubuntu-latest
-    env:
-      BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      FILE_KEY: ${{ secrets.FILE_KEY }}
-    steps:
-      - name: checkout code
-        uses: actions/checkout@v3
 
-      - name: setup python
-        uses: actions/setup-python@v2
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      ECR_REPOSITORY: flask-app
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: install dependencies
-        run: |
-          pip install -r requirements.txt
-
-      - name: run pipeline
+      - name: Run pipeline
         env:
           CAPSTONE_TEST: ${{ secrets.CAPSTONE_TEST }}
-        run: |
-          dvc repro
+        run: dvc repro
 
-      - name: Run model tests
+      - name: Run tests
         env:
           CAPSTONE_TEST: ${{ secrets.CAPSTONE_TEST }}
         run: |
           python -m unittest tests/test_model.py
+          python -m unittest tests/test_flask_app.py
 
-      - name: Promote model to production
-        if: success()
-        env:
-          CAPSTONE_TEST: ${{ secrets.CAPSTONE_TEST }}
-        run: python scripts/promote_model.py
+      # ------------------ AWS LOGIN ------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Run Flask app tests
-        if: success()
-        env:
-          CAPSTONE_TEST: ${{ secrets.CAPSTONE_TEST }}
-        run: python -m unittest tests/test_flask_app.py
-
-      - name: Login to AWS ECR
-        if: success()
+      - name: Login to Amazon ECR
         run: |
-            aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
-            aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            aws configure set region ${{ secrets.AWS_REGION }}
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          aws ecr get-login-password --region $AWS_REGION \
+          | docker login --username AWS --password-stdin \
+          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
+      # ------------------ BUILD & PUSH ------------------
       - name: Build Docker image
         run: |
-            docker build -t ${{ secrets.ECR_REPOSITORY }}:latest .
+          docker build -t flask-app:latest .
 
       - name: Tag Docker image
         run: |
-            docker tag ${{ secrets.ECR_REPOSITORY }}:latest \
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+          docker tag flask-app:latest \
+          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/flask-app:latest
 
-    
-      - name: Check Docker Authentication
-        run: docker info
-
-      - name: Push Docker image to ECR
+      - name: Push Docker image
         run: |
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/flask-app:latest
 
-      - name: Set Up kubectl
+      # ------------------ EKS DEPLOY ------------------
+      - name: Setup kubectl
         uses: azure/setup-kubectl@v3
-        with:
-          version: 'latest'
-      
+
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig --region us-east-1 --name flask-app-cluster
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name flask-app-cluster
 
-      - name: Create Kubernetes Secret
+      # 🔥 AUTO-GENERATE ECR SECRET (THIS FIXES ImagePullBackOff)
+      - name: Create / Update ECR imagePullSecret
+        run: |
+          kubectl delete secret ecr-secret --ignore-not-found
+          aws ecr get-login-password --region $AWS_REGION | \
+          kubectl create secret docker-registry ecr-secret \
+            --docker-server=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com \
+            --docker-username=AWS \
+            --docker-password=$(aws ecr get-login-password --region $AWS_REGION)
+
+      - name: Create App Secret
         run: |
           kubectl create secret generic capstone-secret \
-            --from-literal=CAPSTONE_TEST=${{ secrets.CAPSTONE_TEST }} --dry-run=client -o yaml | kubectl apply -f -
+            --from-literal=CAPSTONE_TEST=${{ secrets.CAPSTONE_TEST }} \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to EKS
         run: |
