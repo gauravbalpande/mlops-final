@@ -1,0 +1,2 @@
+set ecr repo name--> mlops-proj-regis
+set s3 bucket name--> mlops-1803 and put rawdata.csv in it
