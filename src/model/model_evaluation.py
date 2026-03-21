@@ -11,6 +11,8 @@ import os
 import sys
 from src.logger import logging
 
+from dotenv import load_dotenv
+load_dotenv()
 
 # Below code block is for production use
 # -------------------------------------------------------------------------------------

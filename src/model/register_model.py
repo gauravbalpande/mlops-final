@@ -11,7 +11,8 @@ import warnings
 warnings.simplefilter("ignore", UserWarning)
 warnings.filterwarnings("ignore")
 
-
+from dotenv import load_dotenv
+load_dotenv()
 
 # Below code block is for production use
 # -------------------------------------------------------------------------------------

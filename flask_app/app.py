@@ -7,9 +7,11 @@ import mlflow
 import dagshub
 from flask import Flask, render_template, request
 # from src.logger import logging
-# from prometheus_client import Counter, Histogram, generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST
 import time
 
+from dotenv import load_dotenv
+load_dotenv()
 
 # logging setup for docker
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------------------------------------------
 # Set up DagsHub credentials for MLflow tracking
 dagshub_token = os.getenv("CAPSTONE_TEST")
+
 if not dagshub_token:
     raise EnvironmentError("CAPSTONE_TEST environment variable is not set")
 
@@ -58,10 +61,10 @@ app = Flask(__name__)
 
 
 # Custom Metrics for Monitoring
-# registry = CollectorRegistry()
-# REQUEST_COUNT = Counter("app_request_count", "Total requests", ["method", "endpoint"], registry=registry)
-# REQUEST_LATENCY = Histogram("app_request_latency_seconds", "Latency of requests", ["endpoint"], registry=registry)
-# PREDICTION_COUNT = Counter("model_prediction_count", "Count of predictions", ["prediction"], registry=registry)
+registry = CollectorRegistry()
+REQUEST_COUNT = Counter("app_request_count", "Total requests", ["method", "endpoint"], registry=registry)
+REQUEST_LATENCY = Histogram("app_request_latency_seconds", "Latency of requests", ["endpoint"], registry=registry)
+PREDICTION_COUNT = Counter("model_prediction_count", "Count of predictions", ["prediction"], registry=registry)
 
 # ----------------------------------------------
 # Load Model and Preprocessor
@@ -129,7 +132,7 @@ def preprocess_input(data):
 # ----------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def home():
-    # REQUEST_COUNT.labels(method="GET", endpoint="/").inc()
+    REQUEST_COUNT.labels(method="GET", endpoint="/").inc()
     start_time = time.time()
     prediction = None
     input_values = [""] * len(FEATURE_NAMES)  # Empty placeholders for form
@@ -156,13 +159,13 @@ def home():
             except Exception as e:
                 prediction = f"Processing Error: {e}"
 
-    # REQUEST_LATENCY.labels(endpoint="/").observe(time.time() - start_time)
+    REQUEST_LATENCY.labels(endpoint="/").observe(time.time() - start_time)
     return render_template("index.html", result=prediction, csv_input=",".join(map(str, input_values)))
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    # REQUEST_COUNT.labels(method="POST", endpoint="/predict").inc()
+    REQUEST_COUNT.labels(method="POST", endpoint="/predict").inc()
     start_time = time.time()
     csv_input = request.form.get("csv_input", "").strip()
     if not csv_input:
@@ -177,15 +180,15 @@ def predict():
         if transformed_features is not None and model:
             result = model.predict(transformed_features)
             return "Fraud" if result[0] == 1 else "Non-Fraud"
-            # PREDICTION_COUNT.labels(prediction=str(prediction)).inc()
-            # REQUEST_LATENCY.labels(endpoint="/predict").observe(time.time() - start_time)
+            PREDICTION_COUNT.labels(prediction=str(prediction)).inc()
+            REQUEST_LATENCY.labels(endpoint="/predict").observe(time.time() - start_time)
         return "Error: Model or Transformer not loaded properly."
     except Exception as e:
         return f"Error processing input: {e}"
 
-# @app.route("/metrics", methods=["GET"])
-# def metrics():
-#     return generate_latest(registry), 200, {"Content-Type": CONTENT_TYPE_LATEST}
+@app.route("/metrics", methods=["GET"])
+def metrics():
+    return generate_latest(registry), 200, {"Content-Type": CONTENT_TYPE_LATEST}
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5001)
